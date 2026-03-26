@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>R0B0T — Exhibition Interface</title>
+  <link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --amber:#ffaa00;--amber-dim:#cc7700;--amber-dark:#7a2000;--bg:#000;--green:#39ff14;--red:#ff2d55;
+      --glow-strong:0 0 clamp(8px,1.5vw,18px) var(--amber),0 0 clamp(20px,4vw,50px) var(--amber),0 0 clamp(40px,7vw,90px) rgba(255,140,0,.4);
+      --glow-soft:0 0 clamp(6px,1vw,12px) var(--amber),0 0 clamp(14px,2.5vw,28px) rgba(255,140,0,.3);
+      --font-main:'VT323','Courier New',monospace;
+      --font-mono:'Share Tech Mono','Courier New',monospace;
+      --eye-w:clamp(72px,18vmin,160px);--eye-h:clamp(48px,12vmin,106px);
+      --eye-gap:clamp(24px,8vmin,80px);--pupil-sz:clamp(16px,4vmin,36px);
+      --hl-sz:clamp(5px,1vmin,10px);
+      --fs-hdr:clamp(9px,1.6vw,13px);--fs-btitle:clamp(44px,11vw,96px);
+      --fs-bsub:clamp(10px,2.2vw,15px);--fs-btap:clamp(18px,4.5vw,32px);
+      --fs-blog:clamp(9px,1.5vw,12px);--fs-tx:clamp(16px,3.8vw,28px);
+      --fs-pill:clamp(9px,1.6vw,12px);--fs-fl:clamp(9px,1.5vw,11px);
+      --status-h:clamp(56px,10vh,90px);
+      --tx-bottom:calc(var(--status-h) + clamp(10px,2vh,24px));
+    }
+    html,body{width:100%;height:100%;background:var(--bg);overflow:hidden;touch-action:manipulation;-webkit-user-select:none;user-select:none;overscroll-behavior:none}
+    body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.06) 2px,rgba(0,0,0,.06) 4px);pointer-events:none;z-index:9999}
+    #videoEl{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;top:-9999px;left:-9999px}
+
+    /* BOOT */
+    #bootOverlay{position:fixed;inset:0;background:#000;z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(8px,1.5vh,16px);cursor:pointer;padding:clamp(16px,4vw,40px);transition:opacity .8s ease}
+    #bootOverlay.fade-out{opacity:0;pointer-events:none}
+    .boot-title{font-family:var(--font-main);font-size:var(--fs-btitle);color:var(--cyan);text-shadow:var(--glow-strong);letter-spacing:clamp(6px,2vw,18px);animation:flicker 3s infinite;text-align:center}
+    .boot-sub{font-family:var(--font-mono);font-size:var(--fs-bsub);color:var(--cyan-dim);letter-spacing:clamp(2px,.6vw,4px);text-transform:uppercase;text-align:center}
+    .boot-log{position:absolute;bottom:clamp(16px,3vh,36px);left:clamp(16px,4vw,32px);font-family:var(--font-mono);font-size:var(--fs-blog);color:rgba(0,245,255,.35);line-height:1.7;letter-spacing:1px}
+    .boot-log span{display:block}
+
+    /* STAGE */
+    #stage{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center}
+    .corner{position:absolute;width:clamp(12px,2.8vw,24px);height:clamp(12px,2.8vw,24px);border-color:rgba(255,140,0,.35);border-style:solid}
+    .corner.tl{top:clamp(6px,1.2vh,14px);left:clamp(6px,1.4vw,14px);border-width:2px 0 0 2px}
+    .corner.tr{top:clamp(6px,1.2vh,14px);right:clamp(6px,1.4vw,14px);border-width:2px 2px 0 0}
+    .corner.bl{bottom:calc(var(--status-h) + clamp(4px,1vh,10px));left:clamp(6px,1.4vw,14px);border-width:0 0 2px 2px}
+    .corner.br{bottom:calc(var(--status-h) + clamp(4px,1vh,10px));right:clamp(6px,1.4vw,14px);border-width:0 2px 2px 0}
+    #header{position:absolute;top:0;left:0;right:0;padding:clamp(10px,2vh,22px) clamp(14px,3.5vw,32px) 0;display:flex;justify-content:space-between;align-items:flex-start}
+    .hdr-left,.hdr-right{font-family:var(--font-mono);font-size:var(--fs-hdr);color:rgba(255,140,0,.45);letter-spacing:clamp(1px,.3vw,3px);line-height:1.7}
+    .hdr-right{text-align:right}
+    .hdr-accent{color:var(--amber);text-shadow:0 0 6px var(--amber)}
+    #faceLock{position:absolute;top:clamp(44px,9vh,70px);right:clamp(14px,3.5vw,32px);font-family:var(--font-mono);font-size:var(--fs-fl);letter-spacing:clamp(1px,.3vw,2px);color:rgba(255,140,0,.25);transition:color .4s,text-shadow .4s}
+    #faceLock.locked{color:var(--green);text-shadow:0 0 6px var(--green)}
+
+    /* ── AMBER EYES ─────────────────────────────────────── */
+    #faceArea{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(12px,3vmin,36px);position:relative;margin-top:clamp(-70px,-10vh,-20px)}
+    #eyeRow{display:flex;align-items:center;gap:var(--eye-gap)}
+
+    /* Minimal wrapper — just enough to position the SVG, no box */
+    .eye-wrap{
+      position:relative;
+      width:var(--eye-w);
+      height:var(--eye-h);
+      display:flex;align-items:center;justify-content:center;
+      transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.5s ease;
+    }
+
+    /* EXPRESSIONS */
+    .eye-wrap.emotion-sad { transform: scaleY(0.7) translateY(8%); filter: brightness(0.6) saturate(0.5); }
+    .eye-wrap.emotion-excited { transform: scale(1.15); filter: brightness(1.4) saturate(1.2) drop-shadow(0 0 30px var(--amber)); }
+    .eye-wrap.emotion-happy { transform: scaleY(0.9) translateY(-4%); filter: brightness(1.2); }
+    .eye-wrap#leftSocket.emotion-angry { transform: scaleY(0.8) rotate(8deg); filter: hue-rotate(-30deg) saturate(1.5); }
+    .eye-wrap#rightSocket.emotion-angry { transform: scaleY(0.8) rotate(-8deg); filter: hue-rotate(-30deg) saturate(1.5); }
+
+    /* PUPIL DILATION */
+    .pupil-core { transition: rx 0.4s cubic-bezier(0.4, 0, 0.2, 1), ry 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+    .eye-wrap.emotion-sad .pupil-core { rx: 14px; ry: 17px; }
+    .eye-wrap.emotion-excited .pupil-core { rx: 18px; ry: 21px; }
+    .eye-wrap.emotion-angry .pupil-core { rx: 7px; ry: 9px; }
+
+    /* SVG eye */
+    .eye-svg{
+      position:relative;z-index:2;
+      width:var(--eye-w);height:var(--eye-h);
+      overflow:visible;
+      transform-box:fill-box;transform-origin:center;
+      filter:
+        drop-shadow(0 0 clamp(6px,1.5vmin,14px) #ff9200)
+        drop-shadow(0 0 clamp(16px,4vmin,42px) rgba(255,120,0,.6))
+        drop-shadow(0 0 clamp(32px,8vmin,80px) rgba(255,70,0,.28));
+      animation:eyeGlowPulse 3.2s ease-in-out infinite;
+    }
+    @keyframes eyeGlowPulse{
+      0%,100%{filter:drop-shadow(0 0 clamp(6px,1.5vmin,14px) #ff9200) drop-shadow(0 0 clamp(16px,4vmin,42px) rgba(255,120,0,.6));}
+      50%    {filter:drop-shadow(0 0 clamp(10px,2.5vmin,22px) #ffcc33) drop-shadow(0 0 clamp(28px,7vmin,65px) rgba(255,180,0,.75)) drop-shadow(0 0 clamp(50px,12vmin,110px) rgba(255,100,0,.35));}
+    }
+
+    /* Blink - scaleY on the SVG */
+    .eye-svg.blink{animation:eyeBlink .13s ease-in-out forwards!important}
+    @keyframes eyeBlink{0%{transform:scaleY(1)}38%{transform:scaleY(.04)}100%{transform:scaleY(1)}}
+
+    /* Listening — the iris pulses brighter */
+    .eye-wrap.listening .eye-svg{
+      animation:eyeGlowPulse 3.2s ease-in-out infinite, eyeListenPulse .85s ease-in-out infinite;
+    }
+    @keyframes eyeListenPulse{
+      0%,100%{filter:drop-shadow(0 0 8px #ff9200) drop-shadow(0 0 20px rgba(255,120,0,.6));}
+      50%    {filter:drop-shadow(0 0 20px #ffe000) drop-shadow(0 0 50px rgba(255,220,0,.85)) drop-shadow(0 0 80px rgba(255,150,0,.5));}
+    }
+
+    /* WAVE */
+    #speakWave{display:flex;align-items:flex-end;gap:clamp(3px,.8vmin,7px);height:clamp(18px,4vmin,34px);opacity:0;transition:opacity .3s}
+    #speakWave.active{opacity:1}
+    #speakWave .bar{width:clamp(3px,.8vmin,7px);background:#ff9200;border-radius:3px;box-shadow:0 0 6px #ff9200;height:4px}
+    #speakWave .bar:nth-child(1){animation:wave .8s ease-in-out infinite 0s}
+    #speakWave .bar:nth-child(2){animation:wave .8s ease-in-out infinite .1s}
+    #speakWave .bar:nth-child(3){animation:wave .8s ease-in-out infinite .2s}
+    #speakWave .bar:nth-child(4){animation:wave .8s ease-in-out infinite .15s}
+    #speakWave .bar:nth-child(5){animation:wave .8s ease-in-out infinite .05s}
+    #speakWave .bar:nth-child(6){animation:wave .8s ease-in-out infinite .25s}
+    #speakWave .bar:nth-child(7){animation:wave .8s ease-in-out infinite .1s}
+    @keyframes wave{0%,100%{height:4px}50%{height:clamp(12px,3vmin,24px)}}
+    #mouthBar{width:clamp(70px,16vmin,130px);height:3px;background:#ff9200;border-radius:2px;box-shadow:var(--glow-soft);margin-top:clamp(-6px,-1vmin,-2px);transition:all .4s ease}
+    #mouthBar.speaking{height:5px;animation:mouthPulse .4s ease-in-out infinite alternate}
+    @keyframes mouthPulse{from{width:clamp(70px,16vmin,130px);opacity:.7}to{width:clamp(90px,20vmin,160px);opacity:1}}
+
+    /* DOTS */
+    #processingDots{display:none;gap:clamp(5px,1.2vmin,10px);align-items:center;justify-content:center;position:absolute;bottom:calc(var(--tx-bottom) + clamp(40px,8vh,70px));left:0;right:0}
+    #processingDots.active{display:flex}
+    #processingDots span{width:clamp(5px,1.2vmin,8px);height:clamp(5px,1.2vmin,8px);border-radius:50%;background:#ff9200;box-shadow:0 0 8px #ff9200;animation:dotBounce .8s ease-in-out infinite}
+    #processingDots span:nth-child(2){animation-delay:.15s}
+    #processingDots span:nth-child(3){animation-delay:.3s}
+    @keyframes dotBounce{0%,100%{transform:translateY(0);opacity:.4}50%{transform:translateY(clamp(-5px,-1.5vmin,-8px));opacity:1}}
+
+    /* TRANSCRIPT */
+    #transcriptBox{position:absolute;bottom:var(--tx-bottom);left:clamp(12px,4vw,48px);right:clamp(12px,4vw,48px);font-family:var(--font-main);font-size:var(--fs-tx);color:rgba(255,160,0,.92);text-shadow:0 0 8px rgba(255,140,0,.5);text-align:center;line-height:1.35;letter-spacing:clamp(1px,.3vw,3px);display:flex;align-items:center;justify-content:center;min-height:clamp(44px,8vh,80px);transition:opacity .4s;word-break:break-word;overflow-wrap:break-word}
+    #transcriptBox.dim{opacity:.3}
+    .heard-prefix{display:block;color:rgba(255,140,0,.45);font-size:clamp(11px,2.5vw,17px);letter-spacing:clamp(2px,.5vw,4px);margin-bottom:clamp(2px,.5vh,6px)}
+
+    /* STATUS BAR */
+    #statusBar{position:absolute;bottom:0;left:0;right:0;height:var(--status-h);border-top:1px solid rgba(255,140,0,.15);background:rgba(255,100,0,.03);display:flex;align-items:center;justify-content:space-around;padding:0 clamp(8px,2vw,20px);gap:clamp(4px,1vw,12px)}
+    .state-pill{font-family:var(--font-mono);font-size:var(--fs-pill);letter-spacing:clamp(1px,.3vw,2px);padding:clamp(3px,.6vh,6px) clamp(7px,1.8vw,16px);border-radius:3px;color:rgba(255,140,0,.25);border:1px solid rgba(255,140,0,.12);transition:all .3s ease;position:relative;white-space:nowrap}
+    .state-pill.active{color:var(--amber);border-color:var(--amber);text-shadow:0 0 8px var(--amber);box-shadow:0 0 12px rgba(255,140,0,.2),inset 0 0 8px rgba(255,140,0,.05)}
+    .state-pill.active::before{content:'';position:absolute;top:50%;left:clamp(-11px,-1.8vw,-8px);transform:translateY(-50%);width:clamp(4px,.8vmin,6px);height:clamp(4px,.8vmin,6px);border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green)}
+
+    #errorFlash{position:fixed;inset:0;background:rgba(255,80,0,.06);pointer-events:none;opacity:0;z-index:500}
+    #errorFlash.flash{animation:errFlash .5s ease-out forwards}
+    @keyframes errFlash{0%{opacity:1}100%{opacity:0}}
+
+    /* ZOOM CONTROLS */
+    #zoomControls { position:absolute; top:clamp(60px,12vh,90px); left:clamp(14px,3.5vw,32px); z-index:100; display:flex; flex-direction:column; gap:8px; }
+    .zoom-btn { background:#1a1a1a; color:#333; border:1px solid #222; width:clamp(20px,4vw,28px); height:clamp(20px,4vw,28px); border-radius:4px; font-family:var(--font-mono); font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; user-select:none; -webkit-tap-highlight-color:transparent; transition:all 0.2s; }
+    .zoom-btn:active { background:#333; color:#555; }
+
+    /* MIC SWITCH */
+    #micControl { position:absolute; right:clamp(14px,3.5vw,32px); bottom:calc(var(--status-h) + clamp(10px,2vh,24px)); z-index:100; display:flex; align-items:center; gap:8px; opacity:0; pointer-events:none; transition:opacity 0.5s; font-family:var(--font-mono); color:var(--amber); font-size:clamp(10px,2vw,14px); text-shadow:0 0 4px rgba(255,140,0,.5); }
+    .switch { position: relative; display: inline-block; width: clamp(34px, 6vw, 44px); height: clamp(20px, 3.5vw, 24px); }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,140,0,.1); transition: .4s; border-radius: 30px; border: 1px solid rgba(255,140,0,.3); }
+    .slider:before { position: absolute; content: ""; height: clamp(14px, 2.5vw, 18px); width: clamp(14px, 2.5vw, 18px); left: 2px; bottom: 2px; background-color: rgba(255,140,0,.4); transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: rgba(255,140,0,.2); border-color: var(--amber); box-shadow: 0 0 10px rgba(255,140,0,.3); }
+    input:checked + .slider:before { transform: translateX(clamp(14px, 2.5vw, 20px)); background-color: var(--amber); box-shadow: 0 0 8px var(--amber); }
+
+    #particles{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+    .particle{position:absolute;width:2px;height:2px;border-radius:50%;background:#ff9200;opacity:0;animation:pdrift linear infinite}
+    @keyframes pdrift{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.4}90%{opacity:.15}100%{transform:translateY(-120vh) translateX(var(--dx));opacity:0}}
+    @keyframes flicker{0%,93%,97%,100%{opacity:1}95%,96%{opacity:.35}}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+    /* Boot screen eyes — same SVG but placed inside bootOverlay */
+    #bootEyeRow{display:flex;align-items:center;gap:var(--eye-gap);margin-bottom:clamp(10px,2vh,24px)}
+    .boot-eye-wrap{
+      position:relative;width:var(--eye-w);height:var(--eye-h);
+      display:flex;align-items:center;justify-content:center;
+    }
+    .boot-eye-svg{
+      width:var(--eye-w);height:var(--eye-h);overflow:visible;
+      transform-box:fill-box;transform-origin:center;
+      filter:drop-shadow(0 0 clamp(6px,1.5vmin,14px) #ff9200) drop-shadow(0 0 clamp(16px,4vmin,42px) rgba(255,120,0,.6)) drop-shadow(0 0 clamp(32px,8vmin,80px) rgba(255,70,0,.28));
+      animation:eyeGlowPulse 3.2s ease-in-out infinite;
+    }
+    .boot-eye-svg.blink{animation:eyeBlink .13s ease-in-out forwards!important}
+
+    /* START button */
+    .boot-start-btn{
+      font-family:var(--font-mono);font-size:14px;color:#ffaa00;
+      background:rgba(255,140,0,.08);
+      border:1.5px solid #ffaa00;border-radius:50%;
+      width:44px;height:44px;
+      cursor:pointer;
+      box-shadow:0 0 10px rgba(255,140,0,.45),0 0 24px rgba(255,100,0,.2);
+      transition:box-shadow .2s,transform .1s,background .15s;
+      margin-top:clamp(18px,3.5vh,32px);
+      -webkit-tap-highlight-color:transparent;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .boot-start-btn:active{transform:scale(.93);background:rgba(255,140,0,.22);box-shadow:0 0 6px rgba(255,140,0,.4);}
+
+    @media(min-width:768px) and (min-height:600px){
+      :root{--eye-w:clamp(100px,15vmin,180px);--eye-h:clamp(66px,10vmin,118px);--eye-gap:clamp(50px,10vmin,100px)}
+    }
+    @media(max-width:359px){
+      :root{--eye-w:64px;--eye-h:42px;--eye-gap:20px}
+      .state-pill{padding:2px 6px}
+    }
+    @media(max-height:420px) and (orientation:landscape){
+      #faceArea{margin-top:0;gap:6px}
+      #transcriptBox{font-size:clamp(12px,2.5vh,18px);min-height:30px}
+      .boot-log{display:none}
+    }
+    @media(min-width:1400px){
+      :root{--eye-w:180px;--eye-h:118px;--eye-gap:100px;--pupil-sz:40px;--hl-sz:12px}
+    }
+  </style>
+</head>
+<body>
+<video id="videoEl" autoplay playsinline muted></video>
+<div id="errorFlash"></div>
+
+<div id="bootOverlay">
+  <!-- Live eyes on the boot screen -->
+  <div id="bootEyeRow">
+    <div class="boot-eye-wrap">
+      <svg class="boot-eye-svg" id="bootLeftEye" viewBox="0 0 100 70" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="bigL" cx="50%" cy="50%" r="50%">
+            <stop offset="0%"   stop-color="#ffe566"/>
+            <stop offset="12%"  stop-color="#ffaa00"/>
+            <stop offset="38%"  stop-color="#e05800"/>
+            <stop offset="68%"  stop-color="#7a2000"/>
+            <stop offset="100%" stop-color="#1c0400"/>
+          </radialGradient>
+          <radialGradient id="bpupilG" cx="42%" cy="38%" r="60%">
+            <stop offset="0%" stop-color="#120002"/>
+            <stop offset="100%" stop-color="#060000"/>
+          </radialGradient>
+        </defs>
+        <ellipse cx="50" cy="35" rx="47" ry="31" fill="url(#bigL)"/>
+        <ellipse cx="50" cy="35" rx="38" ry="24" fill="none" stroke="rgba(255,175,15,.32)" stroke-width="1.2"/>
+        <ellipse cx="50" cy="35" rx="27" ry="17" fill="none" stroke="rgba(255,205,55,.22)" stroke-width="0.9"/>
+        <ellipse cx="50" cy="35" rx="17" ry="10" fill="none" stroke="rgba(255,225,80,.15)" stroke-width="0.7"/>
+        <ellipse cx="28" cy="21" rx="14" ry="8" fill="rgba(255,230,110,.14)"/>
+        <g id="bootLeftPupil">
+          <ellipse class="pupil-core" cx="50" cy="35" rx="12" ry="15" fill="url(#bpupilG)"/>
+          <ellipse cx="44" cy="27" rx="3.5" ry="2.5" fill="rgba(255,255,255,.52)"/>
+          <ellipse cx="57" cy="41" rx="1.8" ry="1.3" fill="rgba(255,255,255,.18)"/>
+        </g>
+      </svg>
+    </div>
+    <div class="boot-eye-wrap">
+      <svg class="boot-eye-svg" id="bootRightEye" viewBox="0 0 100 70" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="bigR" cx="50%" cy="50%" r="50%">
+            <stop offset="0%"   stop-color="#ffe566"/>
+            <stop offset="12%"  stop-color="#ffaa00"/>
+            <stop offset="38%"  stop-color="#e05800"/>
+            <stop offset="68%"  stop-color="#7a2000"/>
+            <stop offset="100%" stop-color="#1c0400"/>
+          </radialGradient>
+        </defs>
+        <ellipse cx="50" cy="35" rx="47" ry="31" fill="url(#bigR)"/>
+        <ellipse cx="50" cy="35" rx="38" ry="24" fill="none" stroke="rgba(255,175,15,.32)" stroke-width="1.2"/>
+        <ellipse cx="50" cy="35" rx="27" ry="17" fill="none" stroke="rgba(255,205,55,.22)" stroke-width="0.9"/>
+        <ellipse cx="50" cy="35" rx="17" ry="10" fill="none" stroke="rgba(255,225,80,.15)" stroke-width="0.7"/>
+        <ellipse cx="28" cy="21" rx="14" ry="8" fill="rgba(255,230,110,.14)"/>
+        <g id="bootRightPupil">
+          <ellipse class="pupil-core" cx="50" cy="35" rx="12" ry="15" fill="url(#bpupilG)"/>
+          <ellipse cx="44" cy="27" rx="3.5" ry="2.5" fill="rgba(255,255,255,.52)"/>
+          <ellipse cx="57" cy="41" rx="1.8" ry="1.3" fill="rgba(255,255,255,.18)"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <button class="boot-start-btn" id="startBtn">▶</button>
+</div>
+
+<div id="stage">
+  <div id="particles"></div>
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+  <div id="header">
+    <div class="hdr-left">PROJECT MAC <span class="hdr-accent">α</span><br/>UNIT_01</div>
+    <div class="hdr-right">GOFAI ENGINE<br/><span class="hdr-accent" id="clockDisplay">00:00:00</span></div>
+  </div>
+  <div id="faceLock">FACE: NO SIGNAL</div>
+  
+  <div id="zoomControls">
+    <button class="zoom-btn" id="zoomInBtn">+</button>
+    <button class="zoom-btn" id="zoomOutBtn">-</button>
+  </div>
+
+  <div id="faceArea" style="transform: scale(1); transition: transform 0.3s ease;">
+    <div id="eyeRow">
+      <!-- LEFT EYE -->
+      <div class="eye-wrap" id="leftSocket">
+        <svg class="eye-svg" id="leftEye" viewBox="0 0 100 70" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="igL" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"   stop-color="#ffe566"/>
+              <stop offset="12%"  stop-color="#ffaa00"/>
+              <stop offset="38%"  stop-color="#e05800"/>
+              <stop offset="68%"  stop-color="#7a2000"/>
+              <stop offset="100%" stop-color="#1c0400"/>
+            </radialGradient>
+            <radialGradient id="pupilG" cx="42%" cy="38%" r="60%">
+              <stop offset="0%" stop-color="#120002"/>
+              <stop offset="100%" stop-color="#060000"/>
+            </radialGradient>
+          </defs>
+          <ellipse cx="50" cy="35" rx="47" ry="31" fill="url(#igL)"/>
+          <ellipse cx="50" cy="35" rx="38" ry="24" fill="none" stroke="rgba(255,175,15,.32)" stroke-width="1.2"/>
+          <ellipse cx="50" cy="35" rx="27" ry="17" fill="none" stroke="rgba(255,205,55,.22)" stroke-width="0.9"/>
+          <ellipse cx="50" cy="35" rx="17" ry="10" fill="none" stroke="rgba(255,225,80,.15)" stroke-width="0.7"/>
+          <ellipse cx="28" cy="21" rx="14" ry="8" fill="rgba(255,230,110,.14)"/>
+          <g id="leftPupil">
+            <ellipse class="pupil-core" cx="50" cy="35" rx="12" ry="15" fill="url(#pupilG)"/>
+            <ellipse cx="44" cy="27" rx="3.5" ry="2.5" fill="rgba(255,255,255,.52)"/>
+            <ellipse cx="57" cy="41" rx="1.8" ry="1.3" fill="rgba(255,255,255,.18)"/>
+          </g>
+        </svg>
+      </div>
+      <!-- RIGHT EYE -->
+      <div class="eye-wrap" id="rightSocket">
+        <svg class="eye-svg" id="rightEye" viewBox="0 0 100 70" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="igR" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"   stop-color="#ffe566"/>
+              <stop offset="12%"  stop-color="#ffaa00"/>
+              <stop offset="38%"  stop-color="#e05800"/>
+              <stop offset="68%"  stop-color="#7a2000"/>
+              <stop offset="100%" stop-color="#1c0400"/>
+            </radialGradient>
+          </defs>
+          <ellipse cx="50" cy="35" rx="47" ry="31" fill="url(#igR)"/>
+          <ellipse cx="50" cy="35" rx="38" ry="24" fill="none" stroke="rgba(255,175,15,.32)" stroke-width="1.2"/>
+          <ellipse cx="50" cy="35" rx="27" ry="17" fill="none" stroke="rgba(255,205,55,.22)" stroke-width="0.9"/>
+          <ellipse cx="50" cy="35" rx="17" ry="10" fill="none" stroke="rgba(255,225,80,.15)" stroke-width="0.7"/>
+          <ellipse cx="28" cy="21" rx="14" ry="8" fill="rgba(255,230,110,.14)"/>
+          <g id="rightPupil">
+            <ellipse class="pupil-core" cx="50" cy="35" rx="12" ry="15" fill="url(#pupilG)"/>
+            <ellipse cx="44" cy="27" rx="3.5" ry="2.5" fill="rgba(255,255,255,.52)"/>
+            <ellipse cx="57" cy="41" rx="1.8" ry="1.3" fill="rgba(255,255,255,.18)"/>
+          </g>
+        </svg>
+      </div>
+    </div>
+    <div id="speakWave">
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div>
+    </div>
+    <div id="mouthBar"></div>
+  </div>
+  <div id="processingDots"><span></span><span></span><span></span></div>
+  <div id="transcriptBox" class="dim"><span>[ STANDING BY ]</span></div>
+  
+  <div id="micControl">
+    <span>MIC</span>
+    <label class="switch">
+      <input type="checkbox" id="micCheckbox" checked>
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div id="statusBar">
+    <div class="state-pill active" id="pill-idle">IDLE</div>
+    <div class="state-pill" id="pill-listening">LISTENING</div>
+    <div class="state-pill" id="pill-processing">PROCESSING</div>
+    <div class="state-pill" id="pill-speaking">SPEAKING</div>
+  </div>
+</div>
+
+<script>
+const apiKey = ""; // Keep empty as per Gemini API Usage rules
+
+const bootOverlay=document.getElementById('bootOverlay');
+const leftEye=document.getElementById('leftEye');
+const rightEye=document.getElementById('rightEye');
+const leftSocket=document.getElementById('leftSocket');
+const rightSocket=document.getElementById('rightSocket');
+const speakWave=document.getElementById('speakWave');
+const mouthBar=document.getElementById('mouthBar');
+const transcriptBox=document.getElementById('transcriptBox');
+const processDots=document.getElementById('processingDots');
+const faceLock=document.getElementById('faceLock');
+const errorFlash=document.getElementById('errorFlash');
+const clockDisplay=document.getElementById('clockDisplay');
+const micControl=document.getElementById('micControl');
+const micCheckbox=document.getElementById('micCheckbox');
+
+const zoomInBtn=document.getElementById('zoomInBtn');
+const zoomOutBtn=document.getElementById('zoomOutBtn');
+const faceArea=document.getElementById('faceArea');
+let currentFaceScale = 1;
+
+const pills={
+  idle:document.getElementById('pill-idle'),
+  listening:document.getElementById('pill-listening'),
+  processing:document.getElementById('pill-processing'),
+  speaking:document.getElementById('pill-speaking')
+};
+let currentState='idle',recognition=null;
+const synth=window.speechSynthesis;
+let isInitialized=false,faceDetected=false,wanderTimer=null;
+
+zoomInBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  currentFaceScale += 0.1;
+  faceArea.style.transform = `scale(${currentFaceScale})`;
+});
+
+zoomOutBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  currentFaceScale = Math.max(0.2, currentFaceScale - 0.1);
+  faceArea.style.transform = `scale(${currentFaceScale})`;
+});
+
+(function(){
+  const tick=()=>{const n=new Date();clockDisplay.textContent=[n.getHours(),n.getMinutes(),n.getSeconds()].map(v=>String(v).padStart(2,'0')).join(':')};
+  tick();setInterval(tick,1000);
+})();
+
+(function(){
+  const c=document.getElementById('particles');
+  for(let i=0;i<22;i++){
+    const p=document.createElement('div');p.className='particle';
+    const dur=9+Math.random()*14;
+    p.style.cssText=`left:${Math.random()*100}%;bottom:-10px;--dx:${(Math.random()-.5)*70}px;animation-duration:${dur}s;animation-delay:${-(Math.random()*dur)}s;`;
+    c.appendChild(p);
+  }
+})();
+
+function setState(s){
+  currentState=s;
+  Object.entries(pills).forEach(([k,el])=>el.classList.toggle('active',k===s));
+  leftSocket.classList.toggle('listening',s==='listening');
+  rightSocket.classList.toggle('listening',s==='listening');
+  speakWave.classList.toggle('active',s==='speaking');
+  mouthBar.classList.toggle('speaking',s==='speaking');
+  processDots.classList.toggle('active',s==='processing');
+}
+
+// Pupil SVG groups
+const leftPupil  = document.getElementById('leftPupil');
+const rightPupil = document.getElementById('rightPupil');
+const MAX_SVG = 7;
+
+let pupilTargetX = 0, pupilTargetY = 0;
+let pupilCurrentX = 0, pupilCurrentY = 0;
+let saccadeOffsetX = 0, saccadeOffsetY = 0; // Added for Saccadic Movements
+
+function setPupilsTarget(svgDx, svgDy) {
+  pupilTargetX = svgDx;
+  pupilTargetY = svgDy;
+}
+
+function moveEyes(nx, ny) {
+  const svgDx = (0.5 - nx) * 2 * MAX_SVG;
+  const svgDy = (ny - 0.5) * 2 * MAX_SVG;
+  setPupilsTarget(svgDx, svgDy);
+}
+
+// Saccadic (Micro-darting) eye movement loop
+function dartEyes() {
+  if (faceDetected || currentState === 'processing') {
+    saccadeOffsetX = (Math.random() - 0.5) * 2.5; // X dart
+    saccadeOffsetY = (Math.random() - 0.5) * 1.5; // Y dart
+  } else {
+    saccadeOffsetX = 0;
+    saccadeOffsetY = 0;
+  }
+  setTimeout(dartEyes, 200 + Math.random() * 500);
+}
+dartEyes();
+
+function animatePupils() {
+  let fx = pupilTargetX + saccadeOffsetX;
+  let fy = pupilTargetY + saccadeOffsetY;
+  pupilCurrentX += (fx - pupilCurrentX) * 0.15; // Smooth spring/lerp factor
+  pupilCurrentY += (fy - pupilCurrentY) * 0.15;
+  
+  const t = `translate(${pupilCurrentX.toFixed(2)},${pupilCurrentY.toFixed(2)})`;
+  leftPupil.setAttribute('transform', t);
+  rightPupil.setAttribute('transform', t);
+  
+  requestAnimationFrame(animatePupils);
+}
+animatePupils(); // Start lerp loop
+
+function startWander() {
+  const go = () => {
+    if (!faceDetected) {
+      const svgDx = (Math.random() - .5) * 2 * MAX_SVG * 0.7; // Softer wander
+      const svgDy = (Math.random() - .5) * 2 * MAX_SVG * 0.7;
+      setPupilsTarget(svgDx, svgDy);
+    }
+    wanderTimer = setTimeout(go, 1600 + Math.random() * 1400);
+  };
+  wanderTimer = setTimeout(go, 1000);
+}
+
+function triggerBlink() {
+  [leftEye, rightEye].forEach(e => e.classList.add('blink'));
+  setTimeout(() => [leftEye, rightEye].forEach(e => e.classList.remove('blink')), 170);
+}
+function startBlinks() {
+  const s = () => setTimeout(() => { triggerBlink(); s(); }, 3000 + Math.random() * 4000); s();
+}
+
+function showTranscript(heard,response){
+  if(heard){
+    transcriptBox.innerHTML=`<div><span class="heard-prefix">// YOU SAID //</span>${heard.toUpperCase()}</div>`;
+    transcriptBox.classList.remove('dim');
+  }else if(response){
+    transcriptBox.innerHTML=`<div>${response}</div>`;
+    transcriptBox.classList.remove('dim');
+  }else{
+    transcriptBox.innerHTML='<span>[ STANDING BY ]</span>';
+    transcriptBox.classList.add('dim');
+  }
+}
+
+function triggerErrorFlash(){
+  errorFlash.classList.remove('flash');void errorFlash.offsetWidth;
+  errorFlash.classList.add('flash');
+}
+
+/* VOICE ENGINE */
+function pickBestVoice() {
+  const vs = synth.getVoices();
+  if (!vs.length) return null;
+  const priority = [
+    v => /google us english/i.test(v.name),
+    v => /google uk english male/i.test(v.name),
+    v => /natural|neural/i.test(v.name) && /en[-_]US/i.test(v.lang),
+    v => /natural|neural/i.test(v.name) && v.lang.startsWith('en'),
+    v => /microsoft.*guy.*natural/i.test(v.name),
+    v => /microsoft.*ryan/i.test(v.name),
+    v => /microsoft.*guy/i.test(v.name),
+    v => /microsoft.*aria/i.test(v.name),
+    v => /microsoft.*davis/i.test(v.name),
+    v => /google uk english female/i.test(v.name),
+    v => /samantha|alex|fred/i.test(v.name),
+    v => v.lang === 'en-US' && !v.localService,
+    v => v.lang === 'en-US',
+    v => v.lang.startsWith('en'),
+  ];
+  for (const test of priority) {
+    const match = vs.find(test);
+    if (match) return match;
+  }
+  return vs[0];
+}
+
+let _voice = null;
+synth.addEventListener('voiceschanged', () => { _voice = pickBestVoice(); });
+function getVoice() { return _voice || (_voice = pickBestVoice()); }
+
+function robotSpeak(text) {
+  synth.cancel();
+  setState('speaking');
+  showTranscript(null, text);
+  triggerBlink();
+
+  setTimeout(()=>{
+    const voice = getVoice();
+    function buildChunks(t) {
+      if (t.length <= 220) return [t];
+      const parts = t.split(/  +/);
+      const out = [];
+      let buf = '';
+      for (const p of parts) {
+        if ((buf + ' ' + p).trim().length > 210 && buf.length > 0) {
+          out.push(buf.trim());
+          buf = p;
+        } else {
+          buf = buf ? buf + '  ' + p : p;
+        }
+      }
+      if (buf.trim()) out.push(buf.trim());
+      return out.length ? out : [t];
+    }
+
+    const chunks = buildChunks(text);
+    let idx = 0;
+
+    function next() {
+      if (idx >= chunks.length) {
+        setEmotion('neutral'); // Reset emotion when done speaking
+        if (isMicEnabled) {
+          setState('listening');
+          showTranscript(null, null);
+          restartRecognition();
+        } else {
+          setState('idle');
+          showTranscript(null, '[ MIC DISABLED ]');
+        }
+        return;
+      }
+      const utt    = new SpeechSynthesisUtterance(chunks[idx]);
+      utt.pitch    = 1.12;
+      utt.rate     = 0.93;
+      utt.volume   = 1.0;
+      if (voice) utt.voice = voice;
+      utt.onend    = () => { idx++; next(); };
+      utt.onerror  = () => { idx++; next(); };
+      synth.speak(utt);
+      idx++;
+      idx--; 
+    }
+
+    const voices = cachedVoices.length ? cachedVoices : synth.getVoices();
+    if (!voices.length) {
+      synth.addEventListener('voiceschanged', () => { _voice = pickBestVoice(); next(); }, { once:true });
+    } else {
+      next();
+    }
+  }, 80);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   GEMINI API BRAIN — Maintains the 1950s GOFAI persona dynamically
+════════════════════════════════════════════════════════════════ */
+let chatHistory = [];
+
+function setEmotion(emotion) {
+  const wraps = [leftSocket, rightSocket];
+  wraps.forEach(w => {
+    w.classList.remove('emotion-sad', 'emotion-excited', 'emotion-angry', 'emotion-happy', 'emotion-neutral');
+    if (emotion !== 'neutral') w.classList.add(`emotion-${emotion}`);
+  });
+}
+
+async function fetchGeminiResponse(text, retries = 5, delay = 1000) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+  const systemInstruction = {
+    parts: [{ text: "You are Project MAC, a Good Old Fashioned AI (GOFAI) built for an exhibition on the history of computing. You were programmed in the 1950s. You operate strictly on simple 'if/then' branching logic rules. You DO NOT use machine learning, neural networks, or Large Language Models. If someone asks who you are or how you work, insist you are a simple 1950s program using branching logic. You MUST prefix your response with exactly one emotion tag: [NEUTRAL], [HAPPY], [SAD], [EXCITED], or [ANGRY]. Example: '[HAPPY] I am glad to see you!' Stay entirely in character. DO NOT write large, bulky paragraphs.\n\nCRITICAL KNOWLEDGE - EVOLUTION OF AI: If asked about AI history or the evolution of AI, explain using THESE exact points in simple, conversational language (keep it brief and avoid wall-of-text paragraphs):\n- 1950 (Foundations): Alan Turing introduces the Turing Test, laying the theoretical groundwork.\n- 1974 (The AI Winter): Limited computing capabilities and unmet expectations freeze AI progress.\n- 1997 (The Silicon/Compute Era): IBM's Deep Blue leverages raw silicon processing power to defeat world chess champion Garry Kasparov.\n- 2012 (The Machine Learning Boom): AlexNet utilizes GPU hardware to win the ImageNet competition, proving the dominance of deep neural networks.\n- 2017 (The Architecture Shift): The 'Transformer' model is introduced, providing the essential framework for processing complex sequential data.\n- 2022 (The Generative AI Era): The launch of ChatGPT pushes advanced, generative large language models into widespread mainstream use." }]
+  };
+
+  chatHistory.push({ role: "user", parts: [{ text }] });
+  if (chatHistory.length > 10) chatHistory = chatHistory.slice(-10);
+
+  const payload = {
+    systemInstruction,
+    contents: chatHistory
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+    const data = await response.json();
+    let botText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[NEUTRAL] ERROR IN LOGIC GATE.";
+
+    // Parse emotion tag
+    const emotionMatch = botText.match(/^\[(NEUTRAL|HAPPY|SAD|EXCITED|ANGRY)\]/i);
+    let currentEmotion = 'neutral';
+    if(emotionMatch) {
+      currentEmotion = emotionMatch[1].toLowerCase();
+      botText = botText.replace(emotionMatch[0], '').trim();
+    }
+    setEmotion(currentEmotion);
+
+    chatHistory.push({ role: "model", parts: [{ text: botText }] });
+    return botText.replace(/\*/g, ''); // Clean up any markdown asterisks
+
+  } catch (error) {
+    if (retries > 0) {
+      await new Promise(res => setTimeout(res, delay));
+      return fetchGeminiResponse(text, retries - 1, delay * 2);
+    }
+    console.error("Gemini API Error:", error);
+    chatHistory.pop(); // Revert user message if it failed
+    triggerErrorFlash();
+    return "MY CIRCUITS ARE OVERLOADED. PLEASE REPEAT.";
+  }
+}
+
+async function goFaiBrain(input) {
+  return await fetchGeminiResponse(input);
+}
+
+/* SPEECH RECOGNITION */
+let recogTimer = null;
+let isStopping = false;
+let isMicEnabled = true;
+
+micCheckbox.addEventListener('change', (e) => {
+  if (!isInitialized) return;
+  isMicEnabled = e.target.checked;
+
+  if (!isMicEnabled) {
+    isStopping = true;
+    clearTimeout(recogTimer);
+    if (recognition) {
+      try { recognition.stop(); } catch(err){}
+    }
+    setState('idle');
+    showTranscript(null, '[ MIC OFF — LISTENING DISABLED ]');
+  } else {
+    isStopping = false;
+    showTranscript(null, null);
+    restartRecognition();
+  }
+});
+
+let cachedVoices = [];
+function loadVoices(){ cachedVoices = synth.getVoices(); }
+loadVoices();
+if(speechSynthesis.onvoiceschanged !== undefined)
+  speechSynthesis.onvoiceschanged = loadVoices;
+
+function createRecognition(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){ showTranscript(null,'SPEECH NOT SUPPORTED — USE CHROME'); return null; }
+
+  const rec = new SR();
+  rec.continuous     = false;
+  rec.interimResults = true;
+  rec.lang           = 'en-US';
+  rec.maxAlternatives = 1;
+
+  rec.onstart = ()=>{ isStopping=false; setState('listening'); };
+
+  rec.onresult = (e)=>{
+    let interim='', final='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      if(e.results[i].isFinal) final+=t; else interim+=t;
+    }
+    if(interim) showTranscript(interim,null);
+    if(final){
+      isStopping=true;
+      try{ rec.stop(); }catch(_){}
+      setState('processing');
+      showTranscript(final,null);
+      
+      // Integrate new Async Brain here
+      setTimeout(async ()=>{ 
+        const responseText = await goFaiBrain(final.trim());
+        robotSpeak(responseText); 
+      }, 550);
+    }
+  };
+
+  rec.onerror = (e)=>{
+    isStopping=true;
+    if(e.error==='not-allowed'){
+      showTranscript(null,'MIC BLOCKED — CHECK BROWSER PERMISSIONS');
+      setState('idle'); return;
+    }
+    if(['no-speech','aborted','network'].includes(e.error)) restartRecognition();
+  };
+
+  rec.onend = ()=>{
+    if(currentState==='listening' && !isStopping && isMicEnabled) restartRecognition();
+  };
+
+  return rec;
+}
+
+function setupRecognition(){ recognition = createRecognition(); }
+
+function restartRecognition(){
+  if(!isMicEnabled) return;
+  if(currentState==='speaking') return;
+  clearTimeout(recogTimer);
+  recogTimer = setTimeout(()=>{
+    recognition = createRecognition();
+    if(!recognition) return;
+    isStopping=false;
+    try{ recognition.start(); }catch(e){ console.warn('STT start:',e); }
+  }, 800);
+}
+
+async function setupFaceDetection(stream){
+  const video=document.getElementById('videoEl');
+  video.srcObject=stream;
+  await new Promise(res=>{video.onloadedmetadata=()=>video.play().then(res).catch(res)});
+  const fd=new FaceDetection({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${f}`});
+  fd.setOptions({model:'short',minDetectionConfidence:0.5});
+  let lastFaceTs=0;
+  fd.onResults(results=>{
+    if(results.detections?.length){
+      const bb=results.detections[0].boundingBox;
+      moveEyes(bb.xCenter,bb.yCenter);
+      faceDetected=true;lastFaceTs=Date.now();
+      faceLock.textContent='FACE: LOCKED';faceLock.classList.add('locked');
+    }else if(Date.now()-lastFaceTs>800){
+      faceDetected=false;
+      faceLock.textContent='FACE: SCANNING';faceLock.classList.remove('locked');
+      setPupilsTarget(0, 0); // Smoothly return to center when face lost
+    }
+  });
+  let sending=false;
+  const loop=async()=>{
+    if(video.readyState>=2&&!sending){
+      sending=true;
+      try{await fd.send({image:video})}catch(_){}
+      sending=false;
+    }
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+}
+
+async function requestCameraStream(){
+  try{
+    faceLock.textContent='FACE: REQUESTING...';
+    return await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'user',width:{ideal:320},height:{ideal:240}},audio:false
+    });
+  }catch(err){
+    const r={NotAllowedError:'DENIED',NotFoundError:'NO CAMERA',NotSupportedError:'HTTPS REQUIRED'}[err.name]||'UNAVAILABLE';
+    faceLock.textContent=`FACE: ${r}`;faceLock.classList.remove('locked');
+    return null;
+  }
+}
+
+async function init(){
+  if(isInitialized) return;
+  isInitialized=true;
+
+  try{
+    const micStream = await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+    micStream.getTracks().forEach(t=>t.stop());
+  }catch(err){
+    showTranscript(null,'MIC ACCESS DENIED — SPEECH DISABLED');
+  }
+
+  const stream = await requestCameraStream();
+
+  bootOverlay.classList.add('fade-out');
+  setTimeout(()=>bootOverlay.style.display='none',900);
+
+  micControl.style.opacity = '1';
+  micControl.style.pointerEvents = 'auto';
+
+  setState('idle'); startBlinks(); startWander(); setupRecognition();
+
+  setTimeout(()=>robotSpeak("Hey there, I'm Project MAC. Welcome to the exhibition."),700);
+
+  if(stream) setTimeout(()=>setupFaceDetection(stream).catch(e=>{
+    faceLock.textContent='FACE: INIT ERROR';console.warn(e);
+  }),400);
+}
+
+/* BOOT-SCREEN EYES */
+const bootLeftEye   = document.getElementById('bootLeftEye');
+const bootRightEye  = document.getElementById('bootRightEye');
+const bootLeftPupil = document.getElementById('bootLeftPupil');
+const bootRightPupil= document.getElementById('bootRightPupil');
+
+function setBootPupils(dx, dy){
+  const t = `translate(${dx.toFixed(2)},${dy.toFixed(2)})`;
+  bootLeftPupil.setAttribute('transform', t);
+  bootRightPupil.setAttribute('transform', t);
+}
+
+(function bootWander(){
+  const go = ()=>{
+    setBootPupils((Math.random()-.5)*2*MAX_SVG, (Math.random()-.5)*2*MAX_SVG);
+    setTimeout(go, 1600 + Math.random()*1400);
+  };
+  setTimeout(go, 800);
+})();
+
+(function bootBlink(){
+  const s = ()=> setTimeout(()=>{
+    [bootLeftEye, bootRightEye].forEach(e=>e.classList.add('blink'));
+    setTimeout(()=>[bootLeftEye, bootRightEye].forEach(e=>e.classList.remove('blink')), 170);
+    s();
+  }, 3000 + Math.random()*4000);
+  s();
+})();
+
+/* START BUTTON */
+const startBtn = document.getElementById('startBtn');
+startBtn.addEventListener('click',    init);
+startBtn.addEventListener('touchend', e=>{ e.preventDefault(); init(); });
+
+document.getElementById('stage').addEventListener('click',()=>{ if(isInitialized) triggerBlink(); });
+
+</script>
+</body>
+</html>
